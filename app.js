@@ -1,4 +1,5 @@
 require("dotenv").config();
+const schedule = require("node-schedule");
 const Binance = require("binance-api-node").default;
 
 const client = Binance({
@@ -9,46 +10,110 @@ const client = Binance({
 const getAccountInfo = async () => {
   try {
     const accountInfo = await client.accountInfo();
-    let totalAmount = 0;
+    let totalAmountSpotAccount = 0;
 
     if (accountInfo.balances !== undefined) {
       const filterBalances = accountInfo.balances.filter((item) => {
-        return parseFloat(item.free) + parseFloat(item.locked) > 0;
+        return parseFloat(item.free) + parseFloat(item.locked) > 0.05;
       });
 
+      const btcPrice = await getPrice("BTCUSDT");
+
       if (filterBalances.length > 0) {
-        let dataAcount = [];
+        let dataTokenSpot = [];
 
         for (const item of filterBalances) {
           const asset = item.asset;
           const freeAmount = parseFloat(item.free);
           const lockedAmount = parseFloat(item.locked);
+          const totalAmount = freeAmount + lockedAmount;
           let assetPrice = 0;
 
           if (asset === "USDT") {
-            totalAmount = freeAmount + lockedAmount;
+            assetPrice = 1;
           } else {
+            assetPrice = await getPrice(asset + "USDT");
+          }
+          totalValueOfThisAsset = assetPrice * totalAmount;
+
+          if (totalValueOfThisAsset > 1) {
+            totalAmountSpotAccount += totalValueOfThisAsset;
+
+            dataTokenSpot = [
+              ...dataTokenSpot,
+              {
+                token_name: asset,
+                token_price: assetPrice,
+                total_token: totalAmount,
+                // free_token: freeAmount,
+                // locked_token: lockedAmount,
+                total_value_token: totalValueOfThisAsset,
+              },
+            ];
           }
         }
 
-        console.log(filterBalances);
+        const dataAccount = {
+          total_amount_spot_account: totalAmountSpotAccount,
+          BTCUSDT: btcPrice,
+          data_spot: dataTokenSpot,
+        };
+
+        console.log(
+          "\n====================================================================="
+        );
+        console.log("Trigger at:", getCurrentTime());
+        console.log(dataAccount);
+        console.log(
+          "\n====================================================================="
+        );
       }
     }
 
-    totalAmount === 0 && console.log("account empty");
+    totalAmountSpotAccount === 0 && console.log("account empty");
   } catch (error) {
     console.error("Error fetching account info:", error);
   }
 };
 
-const getPrice = async (assetSysbol) => {
+const getPrice = async (symbol) => {
   try {
-    const price = await client.prices({ assetSysbol });
-    return parseFloat(price[assetSysbol]);
+    const price = await client.prices({ symbol });
+    return parseFloat(price[symbol]);
   } catch (error) {
-    console.error(`Error fetching price for ${assetSysbol}:`, error);
+    console.error(`Error fetching price for ${symbol}:`, error);
     return 0;
   }
 };
 
+const getCurrentTime = () => {
+  const now = new Date();
+
+  // Year (4 digits)
+  const year = now.getFullYear();
+
+  // Month (0-indexed, so adjust for human-readable format)
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+
+  // Day (2 digits)
+  const day = String(now.getDate()).padStart(2, "0");
+
+  // Hours (2 digits, 24-hour format)
+  const hours = String(now.getHours()).padStart(2, "0");
+
+  // Minutes (2 digits)
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+
+  // Seconds (2 digits)
+  const seconds = String(now.getSeconds()).padStart(2, "0");
+
+  // Format the datetime string
+  const formattedDateTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+
+  return formattedDateTime;
+};
+
 getAccountInfo();
+
+const job = schedule.scheduleJob("*/1 * * * *", getAccountInfo);
+console.log("Function scheduled to run every minute.");
